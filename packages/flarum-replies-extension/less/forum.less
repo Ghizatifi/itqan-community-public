@@ -562,6 +562,30 @@ a.NestedRepliesReplyTag {
   border: 1px solid var(--control-bg-shaded, #e4e6eb);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+
+  @media @phone {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 10px 12px;
+
+    .itqan-stream-toolbar-title {
+      justify-content: flex-start;
+    }
+
+    .itqan-sort-segmented {
+      display: flex;
+      width: 100%;
+      justify-content: space-between;
+
+      .itqan-sort-segment {
+        flex: 1;
+        justify-content: center;
+        padding: 0 6px;
+        font-size: 11.5px;
+      }
+    }
+  }
 }
 
 .itqan-stream-toolbar-title {
