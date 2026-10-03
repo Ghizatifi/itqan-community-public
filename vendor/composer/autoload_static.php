@@ -253,6 +253,7 @@ class ComposerStaticInit971ada262890473cd1ad51a47f33e20b
         ),
         'M' =>
         array (
+            'Mtareq\\NestedReplies\\' => 21,
             'Monolog\\' => 8,
             'Minishlink\\WebPush\\' => 19,
             'Middlewares\\Utils\\' => 18,
@@ -302,6 +303,7 @@ class ComposerStaticInit971ada262890473cd1ad51a47f33e20b
         'I' =>
         array (
             'Itqan\\Typography\\' => 17,
+            'Itqan\\Notifications\\' => 20,
             'Itqan\\Theme\\' => 12,
             'Itqan\\MailerLite\\' => 17,
             'Itqan\\Discussions\\' => 18,
@@ -759,6 +761,10 @@ class ComposerStaticInit971ada262890473cd1ad51a47f33e20b
             0 => __DIR__ . '/..' . '/nette/schema/src',
             1 => __DIR__ . '/..' . '/nette/utils/src',
         ),
+        'Mtareq\\NestedReplies\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/mtareq/flarum-nested-replies/src',
+        ),
         'Monolog\\' =>
         array (
             0 => __DIR__ . '/..' . '/monolog/monolog/src/Monolog',
@@ -911,6 +917,10 @@ class ComposerStaticInit971ada262890473cd1ad51a47f33e20b
         'Itqan\\Typography\\' =>
         array (
             0 => __DIR__ . '/..' . '/itqan/flarum-typography/src',
+        ),
+        'Itqan\\Notifications\\' =>
+        array (
+          0 => __DIR__ . '/..' . '/itqan/flarum-notifications/src',
         ),
         'Itqan\\Theme\\' =>
         array (

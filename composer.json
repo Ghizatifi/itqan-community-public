@@ -77,6 +77,7 @@
         "itqan/flarum-notifications": "@dev",
         "itqan/flarum-theme": "@dev",
         "itqan/flarum-typography": "@dev",
+        "mtareq/flarum-nested-replies": "@dev",
         "justoverclock/newsletter": "*",
         "michaelbelgium/flarum-discussion-views": "^7.4",
         "pipecraft/flarum-ext-id-slug": "*",
@@ -120,9 +121,13 @@
             "type": "path",
             "url": "packages/itqan-reactions"
         },
+        "mtareq-flarum-nested-replies": {
+            "type": "path",
+            "url": "packages/flarum-replies-extension"
+        },
         "0": {
             "type": "vcs",
-            "url": "git@github.com:Itqan-community/flarum-lang-arabic.git",
+            "url": "https://github.com/Itqan-community/flarum-lang-arabic.git",
             "no-api": true
         }
     }

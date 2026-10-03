@@ -1,6 +1,5 @@
 <?php
 
-use Flarum\Api\Controller\CreatePostController;
 use Flarum\Api\Controller\ListDiscussionsController;
 use Flarum\Api\Controller\ShowDiscussionController;
 use Flarum\Api\Serializer\BasicPostSerializer;
@@ -8,6 +7,7 @@ use Flarum\Api\Serializer\DiscussionSerializer;
 use Flarum\Api\Serializer\PostSerializer;
 use Flarum\Discussion\Discussion;
 use Flarum\Extend;
+use Flarum\Post\Event\Posted;
 use Flarum\Post\Event\Deleted;
 use Flarum\Post\Event\Saving;
 use Flarum\Post\Post;
@@ -16,12 +16,15 @@ use Itqan\Discussions\Access\PostPolicy;
 use Itqan\Discussions\Api\ListCommentTreeController;
 use Itqan\Discussions\Api\ListPostRepliesController;
 use Itqan\Discussions\Api\LoadTreePostsRelationship;
-use Itqan\Discussions\Api\SanitizeCreatePostPosts;
 use Itqan\Discussions\Api\VoteController;
 use Itqan\Discussions\Console\BackfillParentIdsCommand;
 use Itqan\Discussions\Console\BackfillRootDepthCommand;
 use Itqan\Discussions\Listener\SaveParentIdToPost;
+use Itqan\Discussions\Listener\SendReplyNotifications;
 use Itqan\Discussions\Listener\UpdateReplyCountOnDelete;
+use Itqan\Discussions\Notification\CommentRepliedBlueprint;
+use Itqan\Discussions\Notification\DiscussionRepliedBlueprint;
+use Itqan\Discussions\Notification\FilterDiscussionAuthorFromNewPost;
 use Itqan\Discussions\Provider\SortMapProvider;
 use Itqan\Discussions\Vote\Vote;
 
@@ -31,6 +34,16 @@ return [
         ->css(__DIR__.'/less/forum.less'),
 
     new Extend\Locales(__DIR__.'/locale'),
+
+    (new Extend\View)->namespace('itqan-discussions', __DIR__.'/views'),
+
+    // Reply notifications: discussion-author + nested comment-author (alert + email).
+    // FilterDiscussionAuthorFromNewPost prevents the OP from also receiving the
+    // built-in subscriptions notification for their own discussion.
+    (new Extend\Notification)
+        ->type(DiscussionRepliedBlueprint::class, PostSerializer::class, ['alert', 'email'])
+        ->type(CommentRepliedBlueprint::class, PostSerializer::class, ['alert', 'email'])
+        ->beforeSending(FilterDiscussionAuthorFromNewPost::class),
 
     (new Extend\Routes('api'))
         ->patch('/posts/{id}/vote', 'itqan-discussions.vote', VoteController::class)
@@ -154,20 +167,33 @@ return [
         ->attribute('rootsHasMore', function (DiscussionSerializer $serializer, Discussion $discussion) {
             return isset($discussion->roots_has_more) ? (bool) $discussion->roots_has_more : null;
         })
-        ->attribute('rootsHasPrevious', function (DiscussionSerializer $serializer, Discussion $discussion) {
-            return isset($discussion->roots_has_previous) ? (bool) $discussion->roots_has_previous : null;
-        })
-        ->attribute('rootsOffset', function (DiscussionSerializer $serializer, Discussion $discussion) {
-            return isset($discussion->roots_offset) ? (int) $discussion->roots_offset : null;
-        })
         ->attribute('commentSort', function (DiscussionSerializer $serializer, Discussion $discussion) {
             return $discussion->comment_sort ?? null;
         }),
 
-    // Event listeners for parent_id persistence and reply_count synchronization
+    (new Extend\ApiSerializer(\Flarum\Api\Serializer\BasicDiscussionSerializer::class))
+        ->attributes(function (\Flarum\Api\Serializer\BasicDiscussionSerializer $serializer, Discussion $discussion, array $attributes) {
+            // IanM\Translate\AddDiscussionAttributes::__invoke() types its first
+            // argument as DiscussionSerializer, so it may only be called when the
+            // discussion is the primary resource. When a discussion is included
+            // as a relationship it is serialized through BasicDiscussionSerializer
+            // (e.g. GET /api/posts, whose default include list contains
+            // 'discussion'); calling the invoker there throws a TypeError -> 500.
+            // Fall through untouched in that case.
+            if ($serializer instanceof DiscussionSerializer
+                && class_exists(\IanM\Translate\AddDiscussionAttributes::class)) {
+                $invoker = resolve(\IanM\Translate\AddDiscussionAttributes::class);
+                return $invoker($serializer, $discussion, $attributes);
+            }
+            return $attributes;
+        }),
+
+    // Event listeners for parent_id persistence, reply_count synchronization,
+    // and reply notifications (discussion-author + nested comment-author).
     (new Extend\Event())
         ->listen(Saving::class, SaveParentIdToPost::class)
-        ->listen(Deleted::class, UpdateReplyCountOnDelete::class),
+        ->listen(Deleted::class, UpdateReplyCountOnDelete::class)
+        ->listen(Posted::class, SendReplyNotifications::class),
 
     // The two orderings the discussion list offers.
     (new Extend\ApiController(ListDiscussionsController::class))
@@ -183,10 +209,6 @@ return [
     (new Extend\ApiController(ShowDiscussionController::class))
         ->load(['posts.postVotes'])
         ->prepareDataForSerialization(LoadTreePostsRelationship::class),
-
-    // Prevent CreatePost from dumping every post ID into the client payload.
-    (new Extend\ApiController(CreatePostController::class))
-        ->prepareDataForSerialization(SanitizeCreatePostPosts::class),
 
     (new Extend\Console())
         ->command(BackfillParentIdsCommand::class)

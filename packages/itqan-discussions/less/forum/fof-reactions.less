@@ -50,6 +50,11 @@
       padding-inline: 10px;
       background-color: #f7f7f7;
       border: 1px solid #11111112;
+
+      html[data-itqan-theme='dark'] & {
+        background-color: #121212 !important;
+        border-color: rgba(255, 255, 255, 0.08) !important;
+      }
     }
 
     .Button-label {
@@ -70,6 +75,13 @@
       height: 16px;
       width: 16px;
       margin: 0 !important;
+      object-fit: contain;
+
+      &:not([src]),
+      &[src=''] {
+        opacity: 0;
+        visibility: hidden;
+      }
     }
 
     .count {

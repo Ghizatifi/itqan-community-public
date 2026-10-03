@@ -5,6 +5,11 @@ namespace Itqan\Notifications\Notification;
 use Flarum\Notification\Blueprint\BlueprintInterface;
 use Flarum\Subscriptions\Notification\NewPostBlueprint;
 
+/**
+ * Stops the discussion's author from receiving the built-in NewPostBlueprint
+ * (subscriptions) for their own discussion, since DiscussionRepliedBlueprint
+ * now covers them via alert + email and we don't want duplicates.
+ */
 class FilterDiscussionAuthorFromNewPost
 {
     /**

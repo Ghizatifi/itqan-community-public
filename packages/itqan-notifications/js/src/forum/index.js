@@ -4,11 +4,13 @@ import NotificationGrid from 'flarum/forum/components/NotificationGrid';
 import NotificationList from 'flarum/forum/components/NotificationList';
 import NotificationsDropdown from 'flarum/forum/components/NotificationsDropdown';
 
+import CommentRepliedNotification from './components/CommentRepliedNotification';
 import DiscussionRepliedNotification from './components/DiscussionRepliedNotification';
 import DndToggle from './components/DndToggle';
 
 app.initializers.add('itqan-notifications', () => {
   app.notificationComponents.discussionReplied = DiscussionRepliedNotification;
+  app.notificationComponents.commentReplied = CommentRepliedNotification;
 
   extend(NotificationGrid.prototype, 'notificationTypes', function (items) {
     items.add('discussionReplied', {

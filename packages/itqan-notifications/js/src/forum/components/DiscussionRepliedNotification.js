@@ -9,8 +9,14 @@ export default class DiscussionRepliedNotification extends Notification {
 
   href() {
     const post = this.attrs.notification.subject();
+    const discussion = post && post.discussion ? post.discussion() : null;
 
-    return post ? app.route.post(post) : app.forum.attribute('basePath') || '/';
+    // Deep-link to the new reply. Falls back to base path if anything is missing.
+    if (discussion && post && typeof post.number === 'function') {
+      return app.route.discussion(discussion, post.number());
+    }
+
+    return app.forum.attribute('basePath') || '/';
   }
 
   content() {
@@ -22,6 +28,6 @@ export default class DiscussionRepliedNotification extends Notification {
   excerpt() {
     const post = this.attrs.notification.subject();
 
-    return truncate((post && post.contentPlain()) || '', 200);
+    return truncate((post && post.contentPlain && post.contentPlain()) || '', 200);
   }
 }

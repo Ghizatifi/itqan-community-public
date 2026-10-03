@@ -86,28 +86,17 @@ abstract class AbstractTranslationProvider
     public function supportedLanguages(User $actor): array
     {
         try {
-            $providerLangs = $this->languages();
-            $browserLang = (bool) $this->settings->get('ianm-translate.bind-browser-language');
-
             $currentLocale = $this->manager->getLocale();
-            $locales = $this->adjustLocales($this->manager->getLocales());
+            $baseLocale = strtolower(explode('-', $currentLocale)[0]);
 
-            if ($browserLang) {
-                $locales = $this->mergeBrowserLanguages($locales);
+            if ($baseLocale === 'ar') {
+                return ['ar', 'en'];
             }
 
-            if ($actor->can('translateAnyForumLanguage')) {
-                return $this->getAllLanguages($locales, $providerLangs, $currentLocale);
-            }
-
-            if ($browserLang) {
-                return $locales;
-            }
-
-            return [$currentLocale];
+            return ['en', 'ar'];
         } catch (Throwable $e) {
             resolve('log')->error("[ianm-translate] {$this->name()} failed to get supported languages: {$e->getMessage()}");
-            return [];
+            return ['en', 'ar'];
         }
     }
 
@@ -130,11 +119,19 @@ abstract class AbstractTranslationProvider
 
     private function getAllLanguages(array $locales, array $providerLangs, string $currentLocale): array
     {
-        // Filter locales based on provider languages and remove duplicates
-        $all = array_unique(array_intersect_key($locales, $providerLangs));
+        $all = [];
+        foreach ($locales as $code => $name) {
+            $langCode = is_string($code) ? $code : $name;
+            $baseLang = strtolower(explode('-', $langCode)[0]);
+            if (in_array($langCode, $providerLangs) || in_array($baseLang, $providerLangs)) {
+                $all[] = $langCode;
+            }
+        }
+
+        $all = array_values(array_unique($all));
 
         // If the current locale is in provider languages, move it to the front
-        if (in_array($currentLocale, $providerLangs)) {
+        if (in_array($currentLocale, $all)) {
             // Remove existing instance of current locale
             $all = array_diff($all, [$currentLocale]);
             // Add current locale at the beginning
@@ -151,11 +148,35 @@ abstract class AbstractTranslationProvider
 
     public function translatePostContent(CommentPost $post, string $toLanguage, User $user, bool $force = false): PostTranslation
     {
-        $cached = $this->getCachedTranslation($post, $toLanguage);
+        $targetLang = strtolower(explode('-', $toLanguage)[0]);
+
+        if (!$post->detected_lang) {
+            $detected = $this->identifyLanguage($post);
+            if ($detected && $detected !== 'unknown') {
+                $post->detected_lang = $detected;
+                $post->save();
+            }
+        }
+
+        $cached = $this->getCachedTranslation($post, $targetLang);
+        if (!$cached && $targetLang !== $toLanguage) {
+            $cached = $this->getCachedTranslation($post, $toLanguage);
+        }
+
+        // Force re-translation if cached entry is empty, invalid, or empty XML (<r></r>, <t></t>, etc)
+        if ($cached) {
+            $raw = trim((string) $cached->content);
+            $cleanText = trim(strip_tags($raw));
+            if ($raw === '' || $raw === '<r></r>' || $raw === '<r/>' || $raw === '<t></t>' || $raw === '<t/>' || $cleanText === '') {
+                $cached->delete();
+                $cached = null;
+                $force = true;
+            }
+        }
 
         if (!$cached || $force) {
             try {
-                return $this->performTranslation($post, $toLanguage, $user);
+                return $this->performTranslation($post, $targetLang, $user);
             } catch (Exception $e) {
                 $this->logger->error($e->getMessage());
                 throw new ValidationException(['translate' => 'Translation failed. Please try again later.']);
@@ -175,15 +196,43 @@ abstract class AbstractTranslationProvider
 
     public function translateDiscussionTitle(Discussion $discussion, string $toLanguage, User $user, bool $force = false): DiscussionTranslation
     {
-        $cached = $this->getCachedTitleTranslation($discussion, $toLanguage);
+        $targetLang = strtolower(explode('-', $toLanguage)[0]);
+
+        if (!$discussion->detected_lang) {
+            $detected = $this->identifyTitleLanguage($discussion);
+            if ($detected && $detected !== 'unknown') {
+                $discussion->detected_lang = $detected;
+                $discussion->save();
+            }
+        }
+
+        $cached = $this->getCachedTitleTranslation($discussion, $targetLang);
+        if (!$cached && $targetLang !== $toLanguage) {
+            $cached = $this->getCachedTitleTranslation($discussion, $toLanguage);
+        }
+
+        // Force re-translation if cached entry is empty
+        if ($cached) {
+            $raw = trim((string) $cached->translation);
+            $cleanText = trim(strip_tags($raw));
+            if ($raw === '' || $cleanText === '') {
+                $cached->delete();
+                $cached = null;
+                $force = true;
+            }
+        }
 
         if (!$cached || $force) {
             try {
-                $translatedTitle = $this->translate($discussion->title, $toLanguage);
-                return DiscussionTranslation::buildOrUpdate($discussion->id, $toLanguage, $translatedTitle, $this->name());
+                $sourceLang = self::detectLanguageByScript($discussion->title) ?? $discussion->detected_lang;
+                $translatedTitle = $this->translate($discussion->title, $targetLang, $sourceLang);
+                if (empty(trim(strip_tags($translatedTitle)))) {
+                    throw new Exception("Translation engine returned empty title for discussion {$discussion->id}");
+                }
+                return DiscussionTranslation::buildOrUpdate($discussion->id, $targetLang, $translatedTitle, $this->name());
             } catch (Exception $e) {
                 $this->logger->error($e->getMessage());
-                throw new ValidationException([$toLanguage, $e->getMessage()]);
+                throw new ValidationException([$targetLang, $e->getMessage()]);
             }
         }
 
@@ -201,8 +250,40 @@ abstract class AbstractTranslationProvider
     private function performTranslation(CommentPost $post, string $toLanguage, User $user): PostTranslation
     {
         $formatter = $post->getFormatter();
-        $translated = $formatter->parse($this->translate($formatter->unparse($post->getParsedContentAttribute(), $post), $toLanguage), $post, $user);
-        return PostTranslation::buildOrUpdate($post->id, $toLanguage, $translated, $this->name());
+        $unparsed = $formatter->unparse($post->getParsedContentAttribute(), $post);
+        // Resolve the source language ourselves: relying on the engine's auto-detection
+        // makes mixed ar/en comments translate to themselves (a no-op).
+        $sourceLang = self::detectLanguageByScript($unparsed) ?? $post->detected_lang;
+        $translatedText = $this->translate($unparsed, $toLanguage, $sourceLang);
+
+        if (empty(trim($translatedText))) {
+            throw new Exception("Translation engine returned empty result for post {$post->id}");
+        }
+
+        $translatedXml = $formatter->parse($translatedText, $post, $user);
+        return PostTranslation::buildOrUpdate($post->id, $toLanguage, $translatedXml, $this->name());
+    }
+
+    /**
+     * Deterministic Arabic/Latin script classifier for this ar/en forum.
+     *
+     * Engine language detection misclassifies mixed comments (e.g. an English
+     * sentence that embeds Arabic terms is reported as "ar"), which makes the
+     * translation engine treat ar->ar as a no-op. Counting letters by script is
+     * stable for bilingual content and lets us pass an explicit source language.
+     *
+     * @return string|null "ar", "en", or null when the text holds no letters.
+     */
+    protected static function detectLanguageByScript(string $text): ?string
+    {
+        $arabic = preg_match_all('/[\x{0600}-\x{06FF}\x{0750}-\x{077F}\x{FB50}-\x{FDFF}\x{FE70}-\x{FEFF}]/u', $text);
+        $latin = preg_match_all('/[A-Za-z]/u', $text);
+
+        if ($arabic === false || $latin === false || ($arabic + $latin) === 0) {
+            return null;
+        }
+
+        return $arabic >= $latin ? 'ar' : 'en';
     }
 
 
