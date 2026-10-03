@@ -10,6 +10,7 @@ import DiscussionControls from 'flarum/forum/utils/DiscussionControls';
 import DiscussionListState from 'flarum/forum/states/DiscussionListState';
 import DiscussionListItem from 'flarum/forum/components/DiscussionListItem';
 import DiscussionPage from 'flarum/forum/components/DiscussionPage';
+import PostStreamScrubber from 'flarum/forum/components/PostStreamScrubber';
 import icon from 'flarum/common/helpers/icon';
 import avatar from 'flarum/common/helpers/avatar';
 import humanTime from 'flarum/common/helpers/humanTime';
@@ -27,6 +28,9 @@ import {
   toggleCollapsed,
 } from './components/CommentTree';
 import CommentStreamState from './states/CommentStreamState';
+import DiscussionRepliedNotification from './components/DiscussionRepliedNotification';
+import CommentRepliedNotification from './components/CommentRepliedNotification';
+import NotificationGrid from 'flarum/forum/components/NotificationGrid';
 
 /**
  * Group DFS-ordered comment stream vnodes into one envelope per root:
@@ -196,6 +200,27 @@ const SORT_OPTIONS = [
 ];
 
 app.initializers.add('itqan-discussions', () => {
+  // ==========================================
+  // Reply notification components (discussion-author + nested comment-author)
+  // ==========================================
+  app.notificationComponents.discussionReplied = DiscussionRepliedNotification;
+  app.notificationComponents.commentReplied = CommentRepliedNotification;
+
+  // Add the new notification types to the preferences grid so users can
+  // toggle them on/off per delivery method (alert/email).
+  extend(NotificationGrid.prototype, 'notificationTypes', function (items) {
+    items.add('discussionReplied', {
+      name: 'discussionReplied',
+      icon: 'fas fa-reply',
+      label: app.translator.trans('itqan-discussions.forum.settings.notify_discussion_replied_label'),
+    });
+    items.add('commentReplied', {
+      name: 'commentReplied',
+      icon: 'fas fa-reply',
+      label: app.translator.trans('itqan-discussions.forum.settings.notify_comment_replied_label'),
+    });
+  });
+
   // ==========================================
   // 1. Voting
   // ==========================================
@@ -522,6 +547,19 @@ app.initializers.add('itqan-discussions', () => {
     });
   }
 
+  if (PostStreamScrubber) {
+    extend(PostStreamScrubber.prototype, 'oncreate', function () {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (this.element && this.stream) {
+            this.onresize();
+            this.updateScrubberValues({ animate: false, forceHeightChange: true });
+          }
+        });
+      });
+    });
+  }
+
   if (PostStream) {
     extend(PostStream.prototype, 'oncreate', function () {
       decorateStreamTree();
@@ -614,9 +652,52 @@ app.initializers.add('itqan-discussions', () => {
       this.itqanPrevObserver.observe(sentinel);
     };
 
-    // Core's viewport-driven loading fights the observer above and is what
-    // produced the scroll jumps.
-    PostStream.prototype.loadPostsIfNeeded = function () {};
+    // Monotonic visual scroll tracking across tree envelopes (eliminates jump to bottom glitch)
+    PostStream.prototype.loadPostsIfNeeded = function () {
+      if (!this.stream || this.stream.paused || !this.element) return;
+
+      const container = this.element;
+      const windowHeight = window.innerHeight || document.documentElement.clientHeight;
+      const items = Array.from(container.querySelectorAll('.PostStream-item[data-number]'));
+      if (!items.length) return;
+
+      let highestIndexInViewport = 0;
+      let lastVisibleNumber = 1;
+
+      items.forEach((item, idx) => {
+        const rect = item.getBoundingClientRect();
+        if (rect.top < windowHeight * 0.8 && rect.bottom > 0) {
+          highestIndexInViewport = idx;
+          const num = Number(item.getAttribute('data-number'));
+          if (num > lastVisibleNumber) {
+            lastVisibleNumber = num;
+          }
+        }
+      });
+
+      const totalItems = items.length;
+      if (totalItems > 0) {
+        const visualFraction = Math.min(1, Math.max(0, highestIndexInViewport / (totalItems - 1 || 1)));
+        const totalCount = this.stream.count() || totalItems;
+        const targetIndex = Math.round(visualFraction * (totalCount - 1));
+
+        if (targetIndex !== this.stream.index) {
+          this.stream.index = targetIndex;
+          if (this.stream.forceUpdateScrubber !== undefined) {
+            this.stream.forceUpdateScrubber = true;
+          }
+        }
+      }
+
+      // Sync lastReadPostNumber when scrolling reaches new posts
+      const discussion = this.stream.discussion;
+      if (discussion && typeof discussion.lastReadPostNumber === 'function') {
+        const lastRead = discussion.lastReadPostNumber() || 0;
+        if (lastVisibleNumber > lastRead) {
+          discussion.save({ lastReadPostNumber: lastVisibleNumber });
+        }
+      }
+    };
 
     // Split the stream into the OP and one surface holding every comment.
     extend(PostStream.prototype, 'view', function (vnode) {
@@ -731,7 +812,7 @@ app.initializers.add('itqan-discussions', () => {
 
     // Toolbar at the head of the comments surface: count, and a segmented sort
     // control in place of a native select.
-    extend(PostStream.prototype, 'afterFirstPostItems', function (items) {
+    extend(PostStream.prototype, 'afterFirstPostItemsX', function (items) {
       const discussion = this.discussion || (this.stream && this.stream.discussion);
       if (!discussion) return;
 
@@ -1023,6 +1104,42 @@ app.initializers.add('itqan-discussions', () => {
       40
     );
 
+    // Standalone Share Button (S7 Fix)
+    items.add(
+      'itqan-share',
+      m(
+        'button',
+        {
+          type: 'button',
+          className: 'itqan-share-action',
+          title: text('permalink'),
+          onclick: (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const discussion = typeof post.discussion === 'function' ? post.discussion() : null;
+            if (!discussion) return;
+            const path = app.route.discussion(discussion, post.number());
+            const url = new URL(path, window.location.origin).href;
+            const done = () => {
+              app.alerts.show(
+                { type: 'success', controls: [] },
+                text('permalink_copied')
+              );
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(url).then(done).catch(() => {
+                window.prompt(text('permalink'), url);
+              });
+            } else {
+              window.prompt(text('permalink'), url);
+            }
+          },
+        },
+        [icon('fas fa-share-alt'), m('span.itqan-action-label', trans('permalink'))]
+      ),
+      35
+    );
+
     // Collapse toggle. Collapsed, it summarises the subtree behind it —
     // participants, count, last activity — so it can be judged unopened.
     const loadedChildren = countLoadedChildren(post);
@@ -1140,7 +1257,6 @@ app.initializers.add('itqan-discussions', () => {
     const viewCount = discussion.attribute ? discussion.attribute('views') : null;
 
     const stats = [
-      commentCount != null ? stat('far fa-comment', Math.max(0, commentCount - 1), 'replies') : null,
       participantCount != null ? stat('far fa-user', participantCount, 'participants') : null,
       viewCount != null ? stat('far fa-eye', viewCount, 'views') : null,
     ].filter(Boolean);
@@ -1153,6 +1269,14 @@ app.initializers.add('itqan-discussions', () => {
   // ==========================================
   // 6. Composer integration
   // ==========================================
+  if (app.composer) {
+    extend(app.composer, 'hide', function () {
+      app.itqanActiveParentId = null;
+      app.itqanActiveParentUsername = null;
+      clearActiveReplyTarget();
+    });
+  }
+
   if (ReplyComposer) {
     extend(ReplyComposer.prototype, 'headerItems', function (items) {
       const pId = app.itqanActiveParentId || (app.composer.fields && app.composer.fields.parentId);

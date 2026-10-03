@@ -5,6 +5,8 @@ import NotificationList from 'flarum/forum/components/NotificationList';
 import NotificationsDropdown from 'flarum/forum/components/NotificationsDropdown';
 import DndToggle from './components/DndToggle';
 import extendSubscriptionModal from './extendSubscriptionModal';
+import DiscussionRepliedNotification from './components/DiscussionRepliedNotification';
+import CommentRepliedNotification from './components/CommentRepliedNotification';
 
 app.initializers.add('itqan-notifications', () => {
   extend(NotificationList.prototype, 'controlItems', function (items) {
@@ -28,4 +30,7 @@ app.initializers.add('itqan-notifications', () => {
   if ('fof-follow-tags' in flarum.extensions) {
     extendSubscriptionModal();
   }
+
+  app.notificationComponents.discussionReplied = DiscussionRepliedNotification;
+  app.notificationComponents.commentReplied = CommentRepliedNotification;
 });

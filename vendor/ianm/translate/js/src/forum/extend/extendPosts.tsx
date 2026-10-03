@@ -46,13 +46,15 @@ function addActionItems(items: ItemList<Mithril.Children>) {
   }
 
   const detectedLang = this.attrs.post.detectedLang?.();
-  const availableLanguages = Object.values(app.forum.attribute('ianm-translate.supportedLanguages')).filter((code) => code !== detectedLang);
+  // Offer all configured languages; do not hide one based on (possibly wrong) detection.
+  const availableLanguages = Object.values(app.forum.attribute('ianm-translate.supportedLanguages'));
 
   items.add(
     'translate',
     <TranslateButton
       languages={availableLanguages}
       detectedLang={detectedLang}
+      loading={this.translationState.loading}
       onTranslate={(code: string) => this.translationState.loadTranslation(code)}
     />,
     10
@@ -67,7 +69,7 @@ function addFooterItems(items: ItemList<Mithril.Children>) {
     return;
   }
 
-  if (this.translationState.showing) {
+  if (this.translationState.showing || this.translationState.loading) {
     items.add('translated-content', <TranslatedCommentPost state={this.translationState} />, -10);
   }
 }

@@ -194,10 +194,6 @@
     }
   }
 
-  &:hover > .CommentPost > div {
-    background: var(--surface-hover);
-  }
-
   &.is-reply-target > .CommentPost > div,
   &:has(> .CommentPost.is-reply-target) > .CommentPost > div {
     background: var(--surface-selected);
@@ -347,10 +343,6 @@
 }
 
 // --- Unread / new-since-visit -----------------------------------------------
-
-.PostStream-item[data-unread='true'] > .CommentPost > div {
-  box-shadow: inset 2px 0 0 var(--accent);
-}
 
 .itqan-unread-chip {
   display: inline-flex;

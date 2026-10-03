@@ -23,3 +23,39 @@ itqan-notifications:
       mute_help: إيقاف إشعارات متابعة الوسوم لهذا الوسم. الإشارات المباشرة لا تُكتم.
       default_help: استخدم إعدادات متابعة الوسوم وإعدادات الإشعارات العامة.
       save_failed: تعذّر حفظ تفضيل الإشعار لهذا الوسم.
+
+    notifications:
+      discussion_replied_text: "رد {username} على نقاشك"
+      comment_replied_text: "رد {username} على تعليقك"
+
+  email:
+    discussion_replied:
+      subject: "[رد جديد] {title}"
+      body: |
+        مرحبًا {recipient_display_name}!
+
+        رد {poster_display_name} على نقاشك: {title}.
+
+        لمشاهدة الرد الجديد، اتبع الرابط:
+        {url}
+
+        ---
+
+        {content}
+
+        ---
+
+    comment_replied:
+      subject: "رد {replier_display_name} على تعليقك في {title}"
+      body: |
+        مرحبًا {recipient_display_name}!
+
+        رد {replier_display_name} على تعليقك في {title}.
+
+        {url}
+
+        ---
+
+        {content}
+
+        ---
