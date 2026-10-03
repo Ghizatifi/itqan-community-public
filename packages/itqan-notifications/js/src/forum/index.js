@@ -1,8 +1,10 @@
 import app from 'flarum/forum/app';
+import Model from 'flarum/common/Model';
 import { extend, override } from 'flarum/common/extend';
 import NotificationList from 'flarum/forum/components/NotificationList';
 import NotificationsDropdown from 'flarum/forum/components/NotificationsDropdown';
 import DndToggle from './components/DndToggle';
+import extendSubscriptionModal from './extendSubscriptionModal';
 import DiscussionRepliedNotification from './components/DiscussionRepliedNotification';
 import CommentRepliedNotification from './components/CommentRepliedNotification';
 
@@ -21,8 +23,14 @@ app.initializers.add('itqan-notifications', () => {
     return isDndActive() ? 0 : original();
   });
 
-  // Reply-notification components (mirrors itqan-discussions on main, but
-  // under the itqan-notifications extension for staging).
+  if (app.store.models.tags) {
+    app.store.models.tags.prototype.itqanNotificationChannel = Model.attribute('itqanNotificationChannel');
+  }
+
+  if ('fof-follow-tags' in flarum.extensions) {
+    extendSubscriptionModal();
+  }
+
   app.notificationComponents.discussionReplied = DiscussionRepliedNotification;
   app.notificationComponents.commentReplied = CommentRepliedNotification;
 });
